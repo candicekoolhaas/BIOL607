@@ -1,0 +1,52 @@
+---
+title: "HW1_BIOL607"
+author: "Candice Koolhaas"
+date: "2025-01-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Fiji earthquakes
+
+*Load quakes with data(quakes). Show what’s there with str() and summary(). What do you see?*
+
+*Show the entirety of the column long.*
+
+*Hey, another useful function - unique()! Apply it to a vector, and you can see what are all of the unique values. It’s great for really digging into a problematic vector.*
+
+```{r first queries with quakes}
+data(quakes)
+
+str(quakes)
+summary(quakes)
+
+length(unique(quakes$stations))
+
+range(quakes$depth)
+```
+
+"quakes" is a dataset with 5 variables of numerical data containing what seems to be the lat + longitude of the earthquake, its depth and magnitude, and "stations", which is maybe the station with which the datapoint was recorded, and there are 102 of them. The depth goes from 40 to 680 (feet?).
+
+*Impress Yourself. Where was the earthquake of largest magnitude found? You’ll need to use come comparisons and the max() function for this in your indices instead of a number!*
+
+```{r get the eq of largest mag}
+biggest_quake <- which.max(quakes$mag)
+# row 152
+
+biggest_quake_row <- quakes[biggest_quake,]
+biggest_quake_row
+```
+
+Well, there's the lat and longitude! Googling that gave me the Vanuatu islands!
+
+*Meta 1. For some of you, this week was your first experience with R (or even programming at all) - how did it feel to connect concepts to a novel set of problems. For those who have experience with R, was this a cakewalk or challenging? How did it feel to shake off the cobwebs?*
+I'm going to be dead honest - when it comes to my work, I need to find the fastest working solution for things so I use chatGPT a lot if I don't remember the syntax for something. This sort of thing would have originally made it into my GPT query because it *would* have been a bit faster to just type "hey how do I get the row that has the maximum magnitude". But for this class the objective is personal skillset growth so I am not going to do that - and I ended up finding the solution pretty fast on my own anyway, internally within R without any googling... just with thinking... so that was cool to use my brain again... Lol
+
+*Meta 2. How much time did this take you, roughly?*
+About 10 minutes, 15-20 with all the typing for these Q's and making the Github repo for the first time.
+
+*Meta 3. Please give yourself a weak/sufficient/strong assessment on this assigment. Feel free to comment on why.*
+Strong! I am impressed I remembered "oh let me try that one function that starts with 'which'" and it was exactly what I needed - just from using the search engine in my own head!
