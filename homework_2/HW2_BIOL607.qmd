@@ -1,0 +1,192 @@
+---
+title: "HW2_BIOL607"
+format: html
+---
+
+## Visualizing Arctic Sea Ice
+
+```{r loading packages and data}
+# libraries - if they don't load
+# install.packages("tidyverse")
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(forcats)
+
+theme_set(theme_bw(base_size=12))
+
+ice <- read_csv("http://biol607.github.io/homework/data/NH_seaice_extent_monthly_1978_2016.csv") %>%
+  mutate(Month_Name = factor(Month_Name), # makes it a factor
+         Month_Name = fct_reorder(Month_Name, Month)) # puts month in order
+```
+
+1.  Make a boxplot showing the variability in sea ice extent every month. 
+
+```{r boxplots}
+ggplot(ice, aes(x = Month_Name, y = Extent)) +
+  geom_boxplot() +
+  labs(
+    title = "Variability in sea ice changes per month",
+    subtitle = "Sea ice peaks in late winter and plummets in late summer",
+    x = "Month", y = "Sea ice extent"
+  ) 
+```
+
+2.  Use `ggridges` to do the same thing. What do you learn that is different than the boxplot?
+
+```{r ggridges}
+library(ggridges)
+
+ggplot(ice, aes(x = Extent, y = Month_Name, fill = Month_Name, color = Month_Name)) +
+  geom_density_ridges(alpha = 0.5, show.legend = FALSE) +
+    labs(
+    title = "Variability in sea ice changes per month",
+    subtitle = "Sea ice peaks in late winter and plummets in late summer",
+    x = "Month", y = "Sea ice extent"
+  ) 
+```
+
+That plot is so cool! I am struggling to see what is explicitly different in how it communicates the data, but I do see how its easier to see how the tails in some of the early fall months are longer, and I think that it makes it easier to compare the amounts across the months.
+
+3.  One thing that’s really cool about faceting is that you can use cut\_\*() functions on continuous variables to make facets by groups of continuous variables. To see what I mean, try cut_interval(1:10, n = 5) See how it makes five bins of even width? We use cut_interval() or other cut functions with faceting like so facet_wrap(vars(cut_interval(some_variable))).
+
+    With the original data, plot sea ice by year, with different lines (oh! What geom will you need for that?) for different months. Then, use facet_wrap and cut_interval(Month, n=4) to split the plot into seasons.
+
+```{r trying cut_interval}
+cut_interval(1:10, n = 5)
+```
+
+Oooohhh cool.
+
+```{r sea ice cut into pieces}
+ggplot(ice, aes(x = Year, y = Extent, color = Month_Name)) +
+  geom_line() +
+  labs(
+    title = "Variability in sea ice changes per month",
+    subtitle = "Sea ice peaks in late winter and plummets in late summer",
+    x = "Year", y = "Sea ice extent"
+  ) +
+  facet_wrap(~cut_interval(Month, n = 4)) +
+    theme(legend.position = "left", 
+          plot.subtitle = element_text(size = 9))
+
+```
+
+4.  Last, make a line plot of sea ice by month with different lines as different years. Gussy it up with colors by year, a different theme, critical values, and whatever other annotations, changes to axes, etc., you think best show the story of this data. For ideas, see the lab, and look at various palettes around. Extra credit for using [colorfindr](https://github.com/zumbov2/colorfindr) to make a palette.
+
+```{r fancy line plot}
+library(dplyr)
+
+ice %>% ggplot() +
+  geom_line(aes(x = Month, y = Extent, group = Year, col = Year)) + 
+  scale_x_continuous(breaks = 1:12, labels=month.name) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(
+    title = "Variability in sea ice changes per month",
+    subtitle = "Sea ice peaks in late winter and plummets in late summer",
+    x = "Month", y = "Sea ice extent"
+  ) 
+```
+
+For the above plot, I tried changing the theme but whenever I did so, it didn't really make anything look cooler and my nice diagonal month labels went back to horizontal (and they smushed together because of it)! So it isn't super customized.
+
+5.  Make it animated with gganimate. Just like above. See https://gganimate.com/ to learn the package!
+
+```{r}
+library(gganimate)
+library(gifski)
+library(dplyr)
+
+p <- ice %>% ggplot() +
+  geom_line(aes(x = Month, y = Extent, group = Year, col = as.factor(Year))) + 
+  scale_x_continuous(breaks = 1:12, labels = month.name) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(
+    title = "Variability in Sea Ice Changes Per Month",
+    subtitle = "Sea ice peaks in late winter and plummets in late summer",
+    x = "Month",
+    y = "Sea Ice Extent",
+    color = "Year"
+  ) +
+  transition_states(Year)
+
+animate(p, renderer = gifski_renderer())
+
+```
+
+Jiminy it took me a while to figure out that I needed to use the gifski library to make it appear. The webpage does not explicitly say that its needed... maybe other people have gotten it to work using just the code provided on the webpage though.
+
+6.  Use the data and make something wholly new and awesome. Even extra extra credit for something amazing animated.
+
+```{r something new and awesome...}
+p2 <- ggplot(ice,
+  mapping = aes(x = Year, y = Extent, color = Month_Name)
+) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(
+    title = "Ice extent across the years",
+    subtitle = "Lines show trends per month",
+    x = "Year", y = "Ice extent",
+    color = "Month"
+  ) +
+  transition_time(Month) +
+  ease_aes('linear') 
+
+animate(p2, renderer = gifski_renderer())
+
+```
+
+7.  Participate in this week or last week’s (or this week’s) [tidy tuesday](https://thomasmock.netlify.app/post/tidytuesday-a-weekly-social-data-project-in-r/) (and see that link to learn waht it is). See [here](https://github.com/rfordatascience/tidytuesday) for data and schedule. Not only include what you do and your code here, but also include a link to where you tweet our your entry with a link to the code and the `#tidytuesday` hashtag.
+
+```{r tidy tuesday}
+library(tidytuesdayR)
+simpsons_characters <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-02-04/simpsons_characters.csv')
+
+library(ggplot2)
+library(dplyr)
+library(stringr)
+
+search_words <- c("donut", "homer", "nuclear")
+
+filtered_data <- simpsons_characters %>%
+  filter(str_detect(normalized_name, paste(search_words, collapse = "|")))
+
+word_counts <- filtered_data %>%
+  mutate(category = case_when(
+    str_detect(normalized_name, "donut") ~ "Donut",
+    str_detect(normalized_name, "homer") ~ "Homer",
+    str_detect(normalized_name, "nuclear") ~ "Nuclear"
+  )) %>%
+  count(category)
+
+ggplot(word_counts, aes(x = category, y = n, fill = category)) +
+  geom_col(color = "black", alpha = 0.8) +
+  labs(
+    title = "Occurrences of Donut, Homer, and Nuclear in Names",
+    subtitle = "From simpsons_characters dataset",
+    x = "Word",
+    y = "Count"
+  ) +
+  scale_fill_manual(values = c("Donut" = "brown", "Homer" = "blue", "Nuclear" = "green")) +
+  theme_minimal()
+
+```
+
+The above could be a whole assignment in itself! I just compared how many times some random words were in the simpsons-character-names dataset. Here is the link to my (first) Bluesky post: [TidyTuesday Bluesky post](https://bsky.app/profile/ckoolh.bsky.social/post/3lhlwz5nzfe2r)
+
+8.  We are now generating figures and imagery. It’s something that blends creativity, abstract thinking, and quantiative abilities. How confident were you in thinking about making figures before this week versus after grappling with ggplot and the grammer of graphics philosophy?
+
+I was and still am able to create the bare minimum plots that I need, but I did learn a lot about making nicer plots this week and a lot more about ggplot. I actually rarely use ggplot, I use base R (I don't like how ggplot just removes rows that it doesn't like, which will mess up how the plot shows the data if you aren't careful, and I am not always careful).
+
+9.  What’s your favorite thing about data visualization?
+
+When everything works correctly and your graph makes sense and there's nothing that makes your advisor think you did something wrong LOL.
+
+10. How much time did this take you, roughly? I’m trying to keep track that these assignments aren’t killer, more than anything.
+
+This one did take me a couple hours, and I'm actually not quite done yet at the point of writing this: I still can't get the gganimate to work (it just prints out a million frames and saves them all into the directory as pngs but doesn't actually show an animated plot). I even had to resort to asking chatGPT what I was doing wrong, but even that didn't give me a solution. Update: needed to tell it to use gifsky to render.
+
+11. Please give yourself a weak/sufficient/strong assessment on this assigment. Feel free to comment on why.
+
+Considering the work that went into this homework, I give myself a "strong", but I am annoyed that I couldn't get everything to work right away and troubleshooting took so long.
