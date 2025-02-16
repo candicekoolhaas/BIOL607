@@ -1,0 +1,244 @@
+---
+title: "HW3"
+format: html
+---
+
+## 1. Load me
+
+Well, below will work - but it creates lots of annoying red text saying that it wants us to specify the column types, but we don't need to do that yet.
+
+```{r}
+library (readr)
+
+urlfile = "https://raw.githubusercontent.com/kelpecosystems/observational_data/refs/heads/master/cleaned_data/keen_cover.csv"
+
+kelp_data2 <- read_csv(url(urlfile))
+
+kelp_data <- read_csv("working_with_data/data/keen_cover.csv", col_names = T)
+
+head(kelp_data)
+head(kelp_data2)
+```
+
+## 2. Format
+
+```{r}
+# head() is my favorite way to look briefly at a data file
+head(kelp_data)
+```
+
+Hm, long data usually has multiple observations for our variable of interest. Since we have a bunch of rows that correspond to variables like Network and PI and year, I would say this is long format.
+
+## 3. Check it out
+
+*3a. How many sites has each PI done?*
+
+```{r}
+library(dplyr)
+
+unique_sites <- kelp_data %>%
+  group_by(PI) %>%
+  summarize(sites = sum(length(unique(SITE))))
+
+unique_sites
+```
+
+*3b. How many years of data does each site have? Show it in descending order.*
+
+```{r}
+site_numYears <- kelp_data %>%
+  group_by(SITE) %>%
+  summarize(numYears = sum(length(unique(YEAR)))) %>%
+  arrange(desc(numYears))
+
+site_numYears
+```
+
+*3c. Impress yourself - can you make a figure showing which site was sampled when?*
+
+```{r}
+# We need to have date going chronologically on x-axis
+# Like month, year
+library(zoo)
+
+kelp_data$Date <- as.yearmon(paste(kelp_data$YEAR, kelp_data$MONTH), "%Y %m")
+
+library(ggplot2)
+
+kelp_data$Date <- as.Date(kelp_data$Date)
+
+ggplot(data = kelp_data,
+       mapping = aes(x = Date,
+                     y = DAY,
+                     color = SITE,
+                     fill = SITE)) +
+  #geom_point(position = "jitter") +
+  geom_tile() +
+    labs(
+      x = "Date by year",
+       title = "Site sampled by date",
+       subtitle = "Data from kelp samples in NE") +
+    scale_x_date(breaks = "1 year") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+I think that looks pretty good considering how many sites there are to fit in there!
+
+## 4. Let's look at some kelp!
+
+4a. This is a big unwieldy dataset. Let’s trim it down to the columns, YEAR, SITE, TRANSECT, PERCENT_COVER, and FAMILY, and SPECIES.
+
+```{r}
+trimmed_kelp <- kelp_data %>%
+  select(YEAR, SITE, TRANSECT, PERCENT_COVER, FAMILY, SPECIES)
+
+head(trimmed_kelp)
+```
+
+*4b. Let’s make it even simpler. Trim the data down so the only species we are looking at are in the family “Laminariaceae”. After that, you can ditch the FAMILY column.*
+
+```{r}
+lam_fam_only <- trimmed_kelp %>%
+  filter(FAMILY == "Laminariaceae")
+
+head(lam_fam_only)
+
+lam_fam_only <- lam_fam_only %>%
+  select(-FAMILY)
+
+head(lam_fam_only)
+```
+
+*4c. For each species is there only one measurement per species transect each year? Or do we need to worry…… Note, this is a common data check you should be doing if you have a large complex data set!*
+
+```{r}
+check_species_transect <- lam_fam_only %>%
+  group_by(SPECIES,SITE,YEAR,TRANSECT) %>%
+  summarize(num_measurement = sum(length(PERCENT_COVER))) %>%
+  filter(num_measurement != 1)
+
+glimpse(check_species_transect)
+```
+
+Looks like for 55 instances, there are more than one measurement per transect, year, site, and species.
+
+*4d. HAHA that was a trick. I knew there sometimes was more than one. That’s because some of these are measurements of juveniles and some are adults. OK - sum up the cover for each species on each transect so that we only have one measurement per species (adults and juveniles together!)*
+
+Only one measurement per species? OK
+
+```{r}
+lam_fam_sums <- lam_fam_only %>%
+  group_by(SPECIES) %>% 
+  summarize(SUM_COVER = sum(PERCENT_COVER)) %>%
+  ungroup()
+
+head(lam_fam_sums)
+```
+
+*4e. Neat! Make a plot showing the timeseries of kelps at each site. You’ll want `stat_summary()` here. You might even need it twice because - note - `stat_summary()` has a `geom` argument where you can do things like “line”. What might that do? Check it out! Facet this plot by species, so we can see the trajectory of each. Feel free to gussy this plot up however you would like (or not). Do you notice anything? Comment!*
+
+```{r}
+lam_fam_timeseries <- lam_fam_only %>%
+  group_by(SPECIES, YEAR, SITE) %>% 
+  summarize(AVG_COVER = mean(PERCENT_COVER, na.rm = TRUE), .groups = "drop")
+
+# YEAR on x-axis
+# cover on y-axis
+# avg across transect
+# facet by species
+
+ggplot(lam_fam_timeseries, aes(x = YEAR, y = AVG_COVER, color = SITE)) +
+  stat_summary(geom = "line", fun = mean) + 
+  stat_summary(geom = "point", fun = mean) +
+  labs(
+    title = "Timeseries of Kelp Cover at Each Site",
+    subtitle = "Averaged across transects",
+    x = "Year",
+    y = "Average Cover"
+  ) +
+  facet_wrap(~SPECIES) +
+  scale_color_viridis_d()
+```
+
+The laminaria species has a lot less cover! And it drops out completely in some sites.
+
+## 5. Wide relationships
+
+*5a. If we want to look at the relationships between species, we need a wide data set. Use `pivot_wider()` to make species into columns with percent cover as your values. Note - be careful to fill in NAs as 0s.*
+
+```{r}
+
+library(tidyr)
+
+wide_kelp <- lam_fam_timeseries %>%
+  pivot_wider(
+    names_from = SPECIES,
+    values_from = AVG_COVER,
+    values_fill = 0
+  )
+
+head(wide_kelp)
+```
+
+*5b. Neat! Is there a relationship between Saccharina latissima and Laminaria digitata? Plot it. As a preview for 2 weeks from now, add a line to your ggplot `stat_smooth(method = "lm")`. Also, remember that you will need backticks \` around variables with spaces in them. What do you think? Feel free to use any other geoms or explore however you like here.*
+
+```{r}
+ggplot(wide_kelp, aes(x = `Laminaria digitata`, y = `Saccharina latissima`)) +
+  geom_point() +
+  stat_smooth(method = "lm") +
+  labs(
+    title = "Relationship Between Laminaria digitata and Saccharina latissima",
+    subtitle = "Examining their cover relationship",
+    x = "Laminaria digitata Cover",
+    y = "Saccharina latissima Cover"
+  ) +
+  theme_linedraw()
+```
+
+Erm doesn't look like much of a relationship?
+
+*5c. Hey, so, remember how we filled in a lot of 0s? Yeah, those weren’t in the original long data we plotted….. which means many of those lines from question 4e might be wrong! So let’s pivot this correct long data back wide and then remake the figure from 4e. Does it look different? Does it tell a different story?*
+
+```{r}
+# You mean make the wide, long?
+long_kelp <- wide_kelp %>%
+  pivot_longer(
+    cols = c(`Laminaria digitata`,`Saccharina latissima`), 
+    names_to = "SPECIES", 
+    values_to = "AVG_COVER"
+  )
+
+ggplot(long_kelp, aes(x = YEAR, y = AVG_COVER, color = SITE)) +
+  stat_summary(geom = "line", fun = mean) + 
+  stat_summary(geom = "point", fun = mean) +
+  labs(
+    title = "Timeseries of Kelp Cover at Each Site",
+    subtitle = "Averaged across transects",
+    x = "Year",
+    y = "Average Cover"
+  ) +
+  facet_wrap(~SPECIES) +
+  scale_color_viridis_d()
+```
+
+It helps us visualize when Laminaria has zero cover, but a lot of the other lines look pretty similar.
+
+*Meta 1: So, this was your first time playing with a novel only mostly clean data set found in the wild. How did you feel working with it? What did you notice as you examined it for the very first time knowing nothing about it?*
+
+I felt good about it, a lot of these things I'm doing with my own datasets. I guess I noticed there was a lot of NAs in this dataset.
+
+*Split-Apply-Combine is…. a way of life, really. Is this something you have dealt with previously in your life or work? How comfortable are you with this concept?*
+
+Yep. I guess it's kind of a weird way to say that you are putting big problems in manageable chunks. Really it's the only way to get major projects done, or to get anything done on days that are lacking in motivation (just get one small thing done at a time).
+
+*When you’ve made datasets in the past, have they been wide, long, or something else? After this week and the Browman and Woo paper, what advice would you give to future you when making data?*
+
+I prefer wide, but sometimes a dataset has to be long for some analysis or plot. Something I should remember in the future is that keeping consistent variable and file names can make things a lot easier. Usually I think my variable names are consistent, easy or understand, and perfect summaries, but then when I come back to it in some months I see how annoyingly vague my variable names are. And as someone who works on datafiles with variables named by a previous grad student ("MultiDataTrialConSum" was probably informative for him, but to me is just gibberish) I should keep this in mind.
+
+*How much time did this take you, roughly? Again, I’m trying to keep track that these assignments aren’t killer, more than anything.*
+
+A couple hours.
+
+*Please give yourself a weak/sufficient/strong assessment on this assigment. Feel free to comment on why.*
+
+Strong! I whipped it up on a Saturday evening after a grueling day collecting data at a children's museum (kudos to me for getting some extra work in even though I was pooped) and then I went over it again to make sure everything looked good and I answered all the questions.
