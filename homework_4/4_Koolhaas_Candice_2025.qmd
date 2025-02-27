@@ -1,0 +1,151 @@
+---
+title: "BIOL_HW_4"
+format: html
+editor: visual
+---
+
+## **0. Intro**
+
+```{r}
+# load libraries
+library(tidyverse)
+```
+
+## **1. Visualizing the Exponential distribution**
+
+1a. Make a tibble that has two columns. The first is a sequence of 200 evenly spaced numbers between 0 and 4. Let’s call that column x. The second is 4 values for rate - `c(0.2, 0.5, 1, 2, 4)`. Let’s get all possible combinations of the two (some function in `tidyr` will do….)
+
+```{r}
+# make tibble
+exp_data <- crossing(
+  x = seq(0, 4, length.out = 200),  
+  # rate below is more than 4 values...
+  rate = c(0.2, 0.5, 1, 2, 4)
+) 
+
+# Uh is that supposed to make 1000 values? I guess...
+```
+
+1b. Now, how do you make those sweet sweet probability densities? Why, with a `d*()` function! In this case, `dexp()`. Make a column that gets the probability density of the exponential distribution for each value of x and rate. You might want to look at the help file to see how to use `dexp()`.
+
+```{r}
+exp_data$density <- dexp(x = exp_data$x, rate = exp_data$rate)
+
+```
+
+1c. Plot how the density of the exponential changes with rate using the tibble you just generated. How do things change with rate?
+
+```{r}
+library(ggplot2)
+exp_data %>%
+  ggplot(aes(x = x, y = density, color = factor(rate))) + 
+  geom_line() +  
+  labs(
+    title = "How density of the exponential changes with rate",
+    x = "x", y = "Density", subtitle = "Density decreases!",
+    color = "Rate"
+  )
+
+```
+
+## **2. Precision and Sampling the Exponential**
+
+2a. To start to sample, let’s begin by building up a set of parameters that link up with simulations. We are going to explore how rate changes the standard error of different properties from our sample. Let’s start by creating a tibble or data frame that has one column for simulations (1 through 1000) and one column with rates. Let’s use the rates from before - `c(0.2, 0.5, 1, 2, 4)`.
+
+```{r}
+# tibble
+sim_data <-
+  # column for sims
+  tibble(sims = 1:1000,
+         # column for rates
+         rates = sample(c(0.2, 0.5, 1, 2, 4), size = 1000, replace = TRUE))
+```
+
+2b. Great! Now simulate your sampling of exponential populations! Assume n = 10. To check yourself, your resulting data frame should be ungrouped and have 50K rows.
+
+```{r}
+set.seed(111)
+
+#hmm
+# I actually do not understand what is being asked here
+simulate_a_sample <- tibble(
+  sims = rep(1:1000, each = 10 * 5),
+  rates = rep(sample(c(0.2, 0.5, 1, 2, 4), size = 50000, replace = TRUE))) %>%
+  mutate(sampled_values = rexp(n = n(), rate = rates))
+```
+
+2c. Now, for each simulation (and rate!) get the sample mean, median, and SD.
+
+```{r}
+sample_summary <- simulate_a_sample %>%
+  group_by(sims, rates) %>%
+  summarise(avg = mean(sampled_values),
+            med = median(sampled_values),
+            sd = sd(sampled_values))
+
+sample_summary
+```
+
+2d. So, how does rate influence the SE of each of these properties? First show with a table and then a plot. One plot with three facets (get your pivot on!) For your table, try out `knitr::kable()` or the `gt` package.
+
+```{r}
+# first get the standard errors
+se_summary <- sample_summary %>%
+  group_by(rates) %>%
+  summarise(
+    SE_avg = sd(avg) / sqrt(n()), 
+    SE_med = sd(med) / sqrt(n()), 
+    SE_sd = sd(sd) / sqrt(n())
+  )
+
+library(knitr)
+kable(se_summary, digits = 4) # weird to have NAs
+
+library(tidyverse)
+se_long <- se_summary %>%
+  pivot_longer(cols = starts_with("SE_"), 
+               names_to = "statistic", 
+               values_to = "SE") %>%
+  mutate(statistic = recode(statistic, 
+                            SE_avg = "Mean", 
+                            SE_med = "Median", 
+                            SE_sd = "Standard Deviation"))
+
+ggplot(se_long, aes(x = rates, y = SE)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~statistic, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Standard Error Across Different Rates",
+       x = "Rate",
+       y = "Standard Error")
+
+```
+
+2e. Do these results surprise you or are they predictable given the plots of exponential distributions you made in #1?
+
+*They look very similar to the exponential distributions. I don't know why standard deviation has NAs in it...*
+
+Meta 1. Whew. We covered a lot this week. Sample distributions, sampling distributions, and simulation. How much of this was new to you? How much of it was familiar or at least made sense? How much was totally alien and offputting?
+
+*This was 95% alien - I never simulate or get samples of things, and I just am still confused about it. I can't tie it in to anything I do in my work since we never really simulate stuff so its hard to grasp for me.*
+
+Meta 2. What are possible uses you could see using simulations for?
+
+*Actually there is a package called simR that uses simulations and I have used that for sample size calculations, and I will actually have to delve into that again soon, so I'm glad that we had this unit despite it being the hardest for me so far.*
+
+Meta 3. How did your progress through this assignment feel after lab? Did you find yourself speeding up as you went along? Are there things that clicked for you along the way? Lightbulbs going off.
+
+*Erm no but the work we did in lab was really useful because I feel like it was giving me some direction of what functions to use when otherwise I wouldn't have had a clue.*
+
+Meta 4. There are a lot of things that also re-appear this week. ggplot, tidyr and pivoting, dplyr, pipes, and more. Are they becoming old friends? What apsects of them are you still struggling with, if at all?
+
+*I actually usually use base R so I forget a lot of the syntax bits of ggplot so I like to go back to the homework assignment to look at the plot syntax and basically try to re-engineer the old plots into the plots for later assignments.*
+
+Meta 5. How much time did this take you, roughly? Again, I’m trying to keep track that these assignments aren’t killer, more than anything.
+
+*This was a rough week for me when it comes to my research workload, and its only seeming to get worse (story of every semester as a grad student) so this assignment took overall a couple hours, broken up over the week - so I'm afraid it might be kind of disjointed/my worst assignment so far.*
+
+Meta 6. Please give yourself a weak/sufficient/strong assessment on this assignment. Feel free to comment on why.
+
+*Weak! I feel like I didn't totally understand the homework - I get the concept of sampling on a global scale - but I have a really hard time figuring out what these questions were asking for, and I just didn't have the time this week to spend any more time on it or seek help (seeking help is also time consuming to formulate a question and then after getting help you are obliged to do things exactly how the help says, and usually that means more work and more time - I'm going to have to take the weaker grade this week).*
