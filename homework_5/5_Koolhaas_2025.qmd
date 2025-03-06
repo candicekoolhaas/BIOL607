@@ -1,0 +1,319 @@
+---
+title: "5_Koolhaas_Candice_2025"
+format: html
+---
+
+## 1. Correlation
+
+```{r load libraries and data}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+
+correlation_data <- read_csv("data/correlation_data.csv", show_col_types = F)
+```
+
+1a. Display the association between the two variables in a scatter plot.
+
+```{r scatter plot}
+ggplot(correlation_data, aes(x = proficiency, y = greymatter)) +
+  geom_point() +
+  labs(x = "Proficiency", y = "Grey matter") +
+  theme_minimal()
+
+```
+
+1b. Calculate the correlation between proficiency and grey matter density.
+
+```{r get correlation}
+cor(correlation_data$proficiency, correlation_data$greymatter)
+```
+
+1c. Test the null hypothesis of zero correlation.
+
+```{r test correlation}
+cor.test(correlation_data$proficiency, correlation_data$greymatter)
+```
+
+1d. What are your assumptions in part (c)?
+
+*One assumption is that the relationship between proficiency and grey matter should be linear (if it was nonlinear, the correlation test would not capture that well... it would give a weird correlation coefficient). Another assumption is that both variables should be normally distributed, and that there shouldn't be any insane outliers.*
+
+1e. Does the scatter plot support these assumptions?
+
+*The scatter plot does seem to support the assumption of a linear relationship, but I don't think it tells us if the variables are normally distributed. To check, we can look at a histogram of each variable:*
+
+```{r histograms}
+par(mfrow = c(1,2))
+hist(correlation_data$proficiency, main = "",
+     xlab = "Proficiency")
+hist(correlation_data$greymatter, main = "",
+     xlab = "Density")
+```
+
+I think these are OK - nothing is perfectly normally distributed, and since we only have 22 observations, things are bound to not be perfect anyway. We can check a qqplot too just in case:
+
+```{r qqplot}
+qqplot(correlation_data$proficiency, correlation_data$greymatter)
+```
+
+That looks great, actually!
+
+1f. Do the results demonstrate that proficiency affects grey-matter density in the brain?
+
+*They are correlated, but we can't assume causation just from this. The high correlation is super interesting, but in order to make a causal inference, I am pretty sure we would have to do more experimenting. There are a lot of other things besides second language proficiency that might be at play here.*
+
+## 2. Lizard bite
+
+Load data and libraries:
+
+```{r load libs, warning = F}
+library(abd)
+lizards <- LizardBite
+```
+
+2a. Fit a linear model to predict territory size from bite force.
+
+```{r linear model bites}
+bite_model <- lm(territory ~ bite, data = lizards)
+summary(bite_model)
+```
+
+2b. Evaluate the assumptions of the model.
+
+So the assumptions we need to check for are:
+
+-   Exogeneity
+
+```{r check exogeneity}
+residuals <- resid(bite_model)
+
+plot(lizards$bite, residuals,
+     main = "Residuals vs. Predictor", 
+     xlab = "Lizard bite", ylab = "Residuals")
+abline(h = 0, col = "red")
+```
+
+*I think this looks OK - the dots should be randomly scattered about, with no discernable pattern (because we are making sure that our x variable does not have a relationship with the error!).*
+
+-   Multicolinearity
+
+```{r multico check}
+library(car)
+#vif(bite_model)
+```
+
+*Pfft we don't need to check for multicolinearity because this is not multiple regression.*
+
+-   Normal distribution
+
+```{r check normality}
+par(mfrow = c(1,2))
+hist(lizards$bite, main = "", xlab = "Bite")
+qqplot(lizards$bite, lizards$territory)
+```
+
+*We only have 11 observations so the histogram of bite looks OK considering that (we are looking for a normal distribution but when we have few observations, sometimes its hard to really see the distribution). And the qqplot looks great, we are looking for the dots to follow a diagonal path upwards.*
+
+-   Independent observations
+
+```{r check for autocorrelation}
+acf(lizards$bite, main = "Autocorrelation of Bite")
+```
+
+*Umm so we want the above plot to not show any spikes outside of the blue dotted lines, ideally, but I think one spike is probably fine, but its something to keep in mind.*
+
+2c. Interpret the intercept and slope parameters.
+
+```{r interpret int and slope}
+bite_model$coefficients
+```
+
+*I would say that this means that when there are no bite strength at all, the territory size is -31! That doesn't make any sense, so we probably should have centered territory. This also says that as territory changes, bite strength increases by 11.7 bite force units.*
+
+```{r center territory}
+lizards$centered_territory <- 
+  lizards$territory - mean(lizards$territory, na.rm = TRUE)
+
+bite_model2 <- lm(centered_territory ~ bite, data = lizards)
+
+bite_model2$coefficients
+```
+
+*Pfft wait this intercept also does not make intuitive sense. Oh well.*
+
+2d. Provide a confidence interval for the slope and interpret the CI.
+
+```{r CI}
+confint(bite_model2)
+```
+
+*We can be 95% sure that if we repeated this experiment a bazillion times, the population coefficient for bite force would lie between 0.71 and 22.64.*
+
+2e. Explain what the slope's standard error tells us (mention a sampling distribution and what that means).
+
+```{r remind model}
+summary(bite_model2)
+```
+
+*The sampling distribution is the distribution of values we would get if we repeatedly sampled from this population, and the slope's standard error tells us how much the slope would vary (on average) if we did indeed sample the population a bunch of times.*
+
+2f. Create a confidence interval for the mean territory size associated with a bite force of 5 and a prediction interval for a lizard that has a bite force of 5, and explain the difference between the intervals. When would you prefer the interval for the lizard's bite force?
+
+```{r creating intervals}
+new_data <- data.frame(bite = 5)
+
+predict(bite_model2, new_data, interval = "confidence")
+
+predict(bite_model2, new_data, interval = "prediction")
+```
+
+*The first interval shows that, if the experiment was repeated many times while sampling from the same population, lizards in general with a bite force of 5 would have a mean territory size between -2.43 and 6.25, 95% of the time.*
+
+*The second interval shows that, if the experiment was repeated many times while sampling from the same population, one hypothetical single lizard who has a bite force of 5 would have a mean territory size between -11.89 and 15.7, 95% of the time.*
+
+*You would want the confidence interval when you are interested in predicting territory size for all lizards in general who have a bite force of 5, and you would want the prediction interval when you are interested in one specific lizard (which is why the interval is wider because there's more uncertainty associated with trying to predict one single individual).*
+
+## 3. LaTeX
+
+$Y_i = \beta_0 + \beta_1 X_i + \epsilon_i$
+
+$\epsilon_i \sim N(0, \sigma)$
+
+## 4. Cadavers
+
+4a. What is the approximate slope of the regression line?
+
+*Hey it is so hard to see this graph. I would say the slope looks something like -5 years over 100 C units, so -0.05.*
+
+4b. What pair of lines show the confidence bands and what do they tell us?
+
+*The dashed lines that are closer to the prediction line is the confidence band, and it tells us that we can be 95% confident that (after sampling from the population a large number of times, in the same way) the actual value lies within those bands.*
+
+4c. Which pair of lines show the prediction interval, and what do they tell us?
+
+*The dashed lines that are farther from the prediction line is the prediction interval, and it tells us that we can be 95% confident that (after sampling from the population a large number of times, in the same way) where any one particular tooth might fall on the line.*
+
+4d. Reproduce the graph with the confidence and prediction intervals.
+
+*This homework is taking me way over a few hours so either a. I plot it like below or b. I use chatGPT to use the broom thing or c. I take an extra hour to understand what the heck broom is. I'm just going with option a for now.*
+
+```{r reproduce, warning = F}
+tooth <- read_csv("data/teeth.csv", show_col_types = F)
+
+tooth_model <- lm(dateOfBirth ~ deltaC14, data = tooth)
+
+tooth_sim <- predict(tooth_model, interval="prediction")
+
+new_df <- cbind(tooth, tooth_sim)
+
+ggplot(new_df, aes(deltaC14, dateOfBirth))+
+    geom_point() +
+    geom_line(aes(y=lwr), color = "red", linetype = "dashed") +
+    geom_line(aes(y=upr), color = "red", linetype = "dashed") +
+    geom_smooth(method=lm, se=TRUE)
+
+```
+
+## 5. Impress yourself!
+
+Fit deet and bites.
+
+```{r load data and fit, warning = F}
+deet <- read_csv("data/deet.csv", show_col_types = F)
+
+ggplot(deet, aes(x = dose, y = bites)) +
+    geom_point() +
+    geom_smooth(method = "lm", 
+                se = TRUE, color = "blue", fill = "lightblue") +
+    labs(title = "Deet dose vs. bites") +
+    theme_minimal()
+
+deet_mod <- lm(bites ~ dose, data = deet)
+
+vcov(deet_mod)
+
+library(mnormt)
+
+rmnorm(4, mean = coef(deet_mod), varcov = vcov(deet_mod))
+```
+
+5a. Using geom_abline() (look at the helpfile - you’ll see instantly why it’s good here!) make a plot that has the following layers and shows that these simulated lines match up well with the fit CI. 1) the data, 2) the lm fit with a CI, and 3) simulated lines. You might have to much around to make it look as good as possible.
+
+```{r try geom abline}
+coef_est <- coef(deet_mod)
+
+set.seed(111)
+n_sim <- 52
+sim_intercepts <- rnorm(n_sim, mean = coef_est[1], sd = 1.1)
+sim_slopes <- rnorm(n_sim, mean = coef_est[2], sd = 0.79) 
+
+ggplot(deet, aes(x = dose, y = bites)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = TRUE, 
+                color = "blue", fill = "lightblue") +
+    geom_abline(aes(intercept = sim_intercepts,
+                    slope = sim_slopes), 
+                alpha = 0.2, color = "red") + 
+    labs(title = "Deet dose vs. bites with simulation") +
+    theme_minimal()
+```
+
+*Whoa! The little predicted lines makes it seem like maybe the model isn't so good after all. Unless maybe I simulated something wrong.*
+
+5b. That’s all well and good, but what about the prediction intervals? To each line, we can add some error drawn from the residual standard deviation. That residual can either be extracted from `summary()` or you can get the `sd` of `residuals`.
+
+Now, visualize the simulated prediction interval around the fit versus the calculated prediction interval around the fit via `predict`. **Go HAM with a clever visualization of all elements on one figure - however you would like**
+
+```{r resids}
+resids <- sd(residuals(deet_mod))
+intercept <- coef_est[1]
+slope <- coef_est[2]
+
+preds <- predict(deet_mod, 
+                 newdata = data.frame(dose = deet$dose), 
+                 interval = "prediction")
+deet$pred_fit <- preds[,1]
+deet$pred_lower <- preds[,2]
+deet$pred_upper <- preds[,3]
+
+ggplot(deet, aes(x = dose, y = bites)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = TRUE, 
+                color = "blue", fill = "lightblue") + 
+    geom_ribbon(aes(ymin = pred_lower, ymax = pred_upper),
+                alpha = 0.2, fill = "purple") +
+    geom_abline(aes(intercept = sim_intercepts, 
+                    slope = sim_slopes), 
+                alpha = 0.2, color = "red") +
+    geom_ribbon(aes(ymin = pred_fit - resids, 
+                    ymax = pred_fit + resids), 
+                alpha = 0.2, fill = "pink") + 
+    labs(title = "Deet vs. bites with sims") +
+    theme_minimal()
+```
+
+*I can't spend any more time on this haha.*
+
+## 6. Meta
+
+Meta 1. How well do you feel you understand the assumption testing behind a linear model? If there are elements that confuse you, what are they? Why?
+
+I *understand assumption testing of linear models. I never heard of exogeneity before, but I am familiar with it now*.
+
+Meta 2. What concepts of linear regression are the clearest for you? Which are the most opaque?
+
+*The clearest are the assumptions, how to interpret, and how to make one. What still isn't clear is the difference between standard deviation and standard error, and if the standard error is different from the residuals...*
+
+Meta 3. Even if you did not do the IYKYK part of this assignment, do you see how simulation can be used with a fit model? Do you feel it would be useful? Do you have gaps in your understanding about why simulation could work here?
+
+*Somewhat - I am annoyed by simulation, either because I don't fully understand it or because I don't believe in it (I don't understand how rnorm() or any of those functions can actually give you a good simulated representation of your data, so why ever use them? I'd rather just go get real data).*
+
+Meta 4. How much time did this take you, roughly? Again, I’m trying to keep track that these assignments aren’t killer, more than anything.
+
+*More than usual. This was a heavy assignment. At least 3 hours.* *And I still needed to look up how to do a bunch of things.*
+
+Meta 5. Please give yourself a weak/sufficient/strong assessment on this assigment. Feel free to comment on why.
+
+*Strong because I did the darn thing even though it was extremely time consuming and simulation is annoying to work with.*
