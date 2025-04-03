@@ -1,0 +1,692 @@
+---
+title: "midterm_quarto"
+format: html
+---
+
+## **1. Data Reshaping and Visualization**
+
+### **1a. Access**
+
+Download and read in the data. Can you do this without downloading, but read directly from the archive?
+
+```{r read in data from github}
+covid_data <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/refs/heads/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv", header = TRUE)
+```
+
+### **1b. It’s big and wide!**
+
+The data is, well, huge. It’s also wide, with dates as columns. Write a workflow that will filter to a state (your choice which one!), and then returns a time series (long data where every row is a day) with columns for date, new daily cases and for cumulative cases in that state.
+
+```{r simplify and use lubridate}
+library(lubridate)
+library(tidyverse)
+library(stringr)
+
+MA_covid <- covid_data %>%
+  filter(Province_State == "Massachusetts") %>%
+  pivot_longer(
+    cols = starts_with("X"),  
+    names_to = "date",
+    values_to = "new_daily_cases"
+  ) %>%
+  mutate(
+    date = str_remove(date, "^X"),
+    date = str_replace_all(date, "\\.", "-"),  
+    date = lubridate::mdy(date)
+  ) %>%
+  arrange(date) %>%  
+  mutate(
+    cumulative_cases = cumsum(as.numeric(new_daily_cases))
+  )
+
+```
+
+Jiminy that took a long time to figure out.
+
+### **1c. Let’s get visual!**
+
+Great! Make a compelling plot of the timeseries for Massachusetts! Points for style, class, ease of understanding major trends, etc. Note, 10/10 for yourself only for the most killer figures. Don’t phone it in! Also, note *what* the data from JHU is. Do you want the cummulatives, or daily, or what? Want to highlight features? Events? Go wild!
+
+```{r 1c viz}
+# hm has to be time on x axis
+# y axis is cumulative cases
+# then different colors for... city
+library(ggplot2)
+
+grouped_MA <- MA_covid %>%
+  group_by(Admin2, date) %>%
+  summarise(cum_cases = sum(cumulative_cases))
+
+library(scales)
+
+ggplot(grouped_MA, aes(x = date, y = cum_cases, color = Admin2)) +
+  geom_line() +
+  labs(
+    title = "Cumulative COVID-19 Cases Over Time in Mass Cities",
+    subtitle = "Same distribution for each city!",
+    x = "Year",
+    y = "Cumulative Cases (in millions)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 7),
+  legend.position = "none"
+  ) +
+  facet_wrap(~ Admin2) +
+  scale_y_continuous(
+    breaks = c(0, 300e6, 600e6, 900e6),  # Actual values
+    labels = c("0", "300", "600", "900")  # Custom labels
+  )
+
+```
+
+## **2. Fit and Evaluate a Linear model**
+
+Load data:
+
+```{r load data q2}
+library(readr)
+
+bird_temps <- read_csv("C:/Users/david/Documents/BIOSTATS/homework/midterm/data/thermal+imaging+data.csv",
+                       show_col_types = F)
+
+bird_morphology <- read_csv("C:/Users/david/Documents/BIOSTATS/homework/midterm/data/morphology+data.csv",
+                       show_col_types = F)
+```
+
+### **2a. What should I do?**
+
+Starting with loading this (new to you) data set for the very first time, what are the steps that you would take to analyze this data? Write them out! Maybe even in comments!
+
+*To analyze the effect of treatment on possible DVs (bill, back, and eye temp if using temperature data), we could think about what kind of model to use based on the fact that our 3 potential DVs are all continuous, numeric data and that "treatment" can be considered a factor. Looking at the data, we might want to think about having ambient temperature and/or sex as covariates, and maybe a random intercept for bird #. So far, this all sounds doable with linear models.*
+
+*Our firsts teps can be:*
+
+1.  *Look at the README file for any important comments.*
+2.  *Look at the data to see if there are any obviously bad things (lots of NAs, anything needs wrangling?)*
+3.  *Look at the histogram distributions of our continuous variables, and see if we have an equalish number of birds in each treatment group.*
+
+### **2b. Let’s get started**
+
+Load the data. Look at it. Anything interesting? Anything you’d want to watch out for? Or is it OK? Anything you’d change to make working with the data easier? Also, manipulate it a bit - for our analysis, we’re going to want Bird \# and the Age of the birds to be categorical variables. Make sure we have variables that will work!
+
+```{r 2b look at bird data}
+summary(bird_morphology)
+
+# Yep, bird # and age is numerical
+# The spaces in column names are driving me crazy though
+# Also the hashtag and parentheses are annoying!
+colnames(bird_morphology) <- gsub(" ", "_", colnames(bird_morphology))
+colnames(bird_morphology) <- gsub("#", "Num", colnames(bird_morphology))
+colnames(bird_morphology) <- gsub("[()]", "", colnames(bird_morphology))
+
+# Make it a factor in case we want to include them in the model
+# It will be easier
+bird_morphology$Bird_Num <- as.factor(bird_morphology$Bird_Num)
+bird_morphology$Age_days <- as.factor(bird_morphology$Age_days)
+```
+
+### **2c. Viz before fit**
+
+The model we will fit is one where we want to look at how temperature treatment affects the development of tarsus length over time (age). Visualize this. Make it look good! Is there anything here that would shape how you fit a model? Do you see why we are treating age as categorical?
+
+*Looks like we need to merge the morphology and the temperature data. Wait! After trying to merge them for a while I noticed that the variable Exp_Temp_degree_C is tracking "treatment" in bird_morphology, so we don't need to merge them!*
+
+*Age is categorical because that will be how the model wants it if we are using it as a covariate. Below shows that Tarsus length increases with age for sure, and maybe there is an effect of treatment that we can model.*
+
+```{r 2c viz}
+table(bird_morphology$Exp._Temp._degree_C)
+
+hist(bird_morphology$Tarsus_mm)
+
+table(bird_morphology$Age_days)
+
+print("So far, so good. Even number of points in each treatment group")
+print("And the histogram for Tarsus mm is OK.")
+
+# Make a plot with age on the x axis
+# Tarsus length on y
+# and a line for each treatment group
+
+bird_morphology$Exp._Temp._degree_C <- as.factor(bird_morphology$Exp._Temp._degree_C)
+
+library(ggplot2)
+
+ggplot(bird_morphology, aes(x = Age_days, y = Tarsus_mm, 
+                            color = Exp._Temp._degree_C, 
+                            group = Exp._Temp._degree_C)) +
+  geom_line(stat = "summary", fun = mean) + 
+  scale_y_continuous(breaks = seq(15, 50, by = 5), 
+                     limits = c(15, 45)) +
+  labs(
+    title = "Tarsus Length Across Ages by Treatment Group",
+    subtitle = "Tarsus length increases with age, \nmaybe a small benefit for warmer temps",
+    x = "Age (days)",
+    y = "Tarsus Length (mm)",
+    color = "Treatment Temp \n(Celcius)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 7))
+
+```
+
+### **2d. Fit and evaluate**
+
+Fit a model where tarsus length is predicted by age, treatment, their interaction, and a ‘block’ effect, as it were, of bird #. Evaluate the fit. Make any modifications as you see necessary due to your model checks. Note, it’s not going to be perfect (I checked the original - hey, you can too - and they’re on the edge) - but our models are robust, so we’re OK.
+
+```{r 2d fit and eval}
+library(performance)
+
+tarsus_mod <- lm(Tarsus_mm ~ Age_days + Exp._Temp._degree_C + 
+                   Exp._Temp._degree_C*Age_days + Bird_Num, 
+                 data = bird_morphology)
+
+check_model(tarsus_mod)
+
+print("The model fits the data well!")
+print("And the residuals look good.")
+print("But high colinearity...")
+print("But the model has an interaction term, so I remember from class")
+print("that interactions will have mega high VIFs.")
+
+qqnorm(residuals(tarsus_mod))  
+qqline(residuals(tarsus_mod), col = "red")
+
+ggplot(bird_morphology, aes(x = as.factor(Age_days), y = Tarsus_mm)) +
+  geom_boxplot(fill = "lightblue", color = "blue", alpha = 0.5) + 
+  labs(title = "Effect of Age on Tarsus Length",
+       x = "Age (days)", y = "Tarsus length (mm)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(bird_morphology, aes(x = as.factor(Exp._Temp._degree_C), y = Tarsus_mm)) +
+  geom_boxplot(fill = "lightgreen", color = "darkgreen", alpha = 0.5) + 
+  labs(title = "Effect of Treatment Temperature on Tarsus Length",
+       x = "Treatment Temp (°C)", y = "Tarsus length (mm)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### **2e. Answer the Question**
+
+A central question of this paper is - does temperature affect the development of tarsus length. With your fit model in hand, answer the question, however you deem fit. Make sure that, alongside any numerical answers you produce, there is at least one stunning figure for a publishable paper!
+
+```{r 2e answer the q}
+summary(tarsus_mod)
+
+# I like the plot I used earlier
+# But we should have the confidence interval/error bars
+
+# Also put the mean diff in there
+mean_diff <- bird_morphology %>%
+  group_by(Exp._Temp._degree_C) %>%
+  summarise(mean_tarsus = mean(Tarsus_mm, na.rm = TRUE)) %>%
+  spread(Exp._Temp._degree_C, mean_tarsus)
+
+mean_difference <- mean_diff$`30` - mean_diff$`15`  
+
+anova(tarsus_mod)
+
+library(emmeans)
+pairwise_comparisons <- emmeans(tarsus_mod, pairwise ~ Exp._Temp._degree_C)
+summary(pairwise_comparisons$contrasts)
+
+ggplot(bird_morphology, aes(x = Age_days, y = Tarsus_mm, 
+                            color = Exp._Temp._degree_C, 
+                            group = Exp._Temp._degree_C)) +
+  geom_smooth(method = "lm", se = TRUE) + 
+  scale_y_continuous(breaks = seq(20, 45, by = 5), 
+                     limits = c(20, 45)) +
+  labs(
+    title = "Tarsus Length Across Ages by Treatment Group",
+    subtitle = paste("Mean difference in Tarsus length between 30°C and 15°C treatment groups\nis", round(mean_difference, 2), "mm., p < 0.05"),
+    x = "Age (days)",
+    y = "Tarsus Length (mm)",
+    color = "Treatment Temp \n(Celcius)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 7))
+
+```
+
+## **3. Something Generalized**
+
+### **3a. Fit a glm**
+
+Load the data. Vizualize. Then, fit and evaluate a generalized linear model with your choice of error distribution looking at the effect of rhizobial region and plant height as measured on march 12 as predictors of \# of leaves on march 12. Does your model meet assumptions? If not, refit with a different. Why did you chose this (or these) error distribution(s)?
+
+```{r load the data and vis}
+plants <- read_csv("C:/Users/david/Documents/BIOSTATS/homework/midterm/data/plants.csv", show_col_types = F)
+
+# visualize
+# Number of leaves will be count data... poisson...
+range(plants$height_mar12)
+
+ggplot(plants, aes(x = leaf_mar12, y = height_mar12, 
+                            color = rhiz_region, 
+                            group = rhiz_region)) +
+  geom_line(stat = "summary", fun = mean) + 
+  scale_y_continuous(breaks = seq(0, 25, by = 5), 
+                     limits = c(0, 25)) +
+  labs(
+    title = "Plant height on March 12 by leaf count, by region",
+    subtitle = "Looks like region does indeed interact",
+    x = "Leaf count on March 12",
+    y = "Plant hieght on March 12",
+    color = "Rhizome region"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 7))
+
+leaf_mod <- glm(leaf_mar12 ~ height_mar12 + rhiz_region,
+                family = poisson(link = "log"), data = plants)
+
+check_model(leaf_mod)
+
+check_residuals(leaf_mod) %>% plot()
+
+print("I say we are looking pretty good!")
+print("Our residual plot is a bit off the line though.")
+print("Let's use dharma")
+
+library(DHARMa)
+simulateResiduals(leaf_mod) %>% plot()
+
+```
+
+*I think that the model is fitting really good in some areas and I think we indeed used the correct error distribution as we are working with count data, but it looks like something isn't fitting right. There might be a pattern in the residuals? The qqplots don't look amazing, and in simulateResiduals() it didn't pass the KS test...*
+
+### **3b. Evaluate your treatments**
+
+Which rhizobial regions enable more leaves relative to the control? And in what direction?
+
+```{r 3b eval}
+summary(leaf_mod)
+```
+
+*The control region here is "beyond", and it seems to have the highest leaf count at March 12 because all other regions lead to smaller leaf counts in relation to it. And the taller the plant is, the more leaves it has, which makes sense.*
+
+### **\*\*3c. Prediction intervals from a distribution**
+
+So, your distribution has quantiles (right? We see these in QQ plots). You can see what the value for those quantiles are from the `q*` function for a distribution. For example, the 95th percentile of a poisson with a λ of 5 spans from 1 to 10. You can see this with `qpois(0.025, lambda = 5)` for the lower, and change it to 0.975 for the upper. Check this out. Plot the upper and lower bounds of the 95th percentile of a Poisson distribution over a range of lambdas from 1 to 30. Do the same for a negative binomial with means from 1 to 30. Note, to translate from a mean ( μ ) with a size of 10 (you might have to look at the helpfile for qnbinom here).
+
+```{r 3c poisson simulating}
+# 95th percentile of a poisson with lambda of 5
+low <- qpois(0.025, lambda = 5)
+high <- qpois(0.975, lambda = 5)
+# Hm that is 1 and 10 indeed
+
+# Range of lambdas
+lambda_values <- seq(1, 30, by = 1)
+
+# Range of means
+mu_values <- seq(1, 30, by = 1)
+
+lower_poisson <- qpois(0.025, lambda = lambda_values)
+upper_poisson <- qpois(0.975, lambda = lambda_values)
+
+# change the size
+size <- 10
+lower_nb <- qnbinom(0.025, size = size, mu = mu_values)
+upper_nb <- qnbinom(0.975, size = size, mu = mu_values)
+
+poisson_data <- data.frame(mu = lambda_values, 
+                           lower = lower_poisson, 
+                           upper = upper_poisson, 
+                           distribution = "Poisson")
+
+nb_data <- data.frame(mu = mu_values, 
+                      lower = lower_nb, 
+                      upper = upper_nb, 
+                      distribution = "Negative Binomial")
+
+combined_data <- rbind(poisson_data, nb_data)
+
+# Plot 
+ggplot(combined_data, aes(x = mu, ymin = lower, ymax = upper, color = distribution)) +
+  geom_ribbon(alpha = 0.3) + # 95th %tile
+  geom_line(aes(y = lower), size = 1) + # lower
+  geom_line(aes(y = upper), size = 1) + # upper
+  labs(title = "95th Percentile Bounds of Poisson and Negative Binomial Distributions",
+       x = "Lambda (Poisson) / Mu (Negative Binomial)",
+       y = "95th Percentile Bounds") +
+  scale_color_manual(values = c("Poisson" = "blue", "Negative Binomial" = "red")) +
+  theme_minimal()
+
+```
+
+*Uhhh I actually think that plot looks super confusing and I don't even know what its telling me. When I google what a Poisson distribution is supposed to look like, it doesn't look like that.*
+
+### **\*\*3d. Prediction intervals from your model**
+
+All right! Armed with this knowledge, one of the frustrating things about `broom::augment()` for glm models is that it doesn’t have an `interval` argument. And has one trick. One - you need to see what scale your answer is returned on. We want to look at the response scale - the scale of the data. Second, while you can use `se_fit` to get standard errors, you don’t get a CI *per se* (although, hey, \~2\*se = CI).
+
+AND - we just looked at how when you have an estimated value, you can get the prediction CI yourself by hand in the previous part of the question. So, using your creativity, visualize the fit, 95% fit interval, and 95% prediction interval at the min, mean, and max of height for each treatment. Geoms can be anything you like! Have fun here!
+
+```{r 3d}
+# Load necessary libraries
+library(broom)
+library(ggplot2)
+library(dplyr)
+
+# We need to viz the min, mean, and max height for each treatment
+# + the 95% CI and prediction intervals
+
+# Get augmented data
+aug_data <- augment(leaf_mod)
+
+# Use predict() to get standard errors
+# I think needs to be on OG scale?
+predictions <- predict(leaf_mod, se.fit = TRUE, type = "link")
+
+# Put it into a data frame
+predictions_df <- data.frame(
+  fit = predictions$fit,  # fitted values
+  se.fit = predictions$se.fit  # standard errors of the fitted values
+)
+
+# Transform the fitted values and standard errors to the response scale (exp)
+aug_data <- aug_data %>%
+  mutate(fit_response = exp(.fitted), # Predicted values on the response scale
+         se_fit = predictions_df$se.fit, # Standard errors of the fitted values
+         # Below for confidence intervals
+         lower_fit = exp(.fitted - 2 * se_fit),
+         upper_fit = exp(.fitted + 2 * se_fit),
+         # Below for prediction intervals
+         lower_pred = exp(.fitted - 2 * se_fit * sqrt(1 + 1/nrow(plants))), 
+         upper_pred = exp(.fitted + 2 * se_fit * sqrt(1 + 1/nrow(plants))) 
+  )
+
+# for predicted heights at each unique region
+height_values <- expand.grid(
+  height_mar12 = c(min(plants$height_mar12), 
+                   mean(plants$height_mar12), 
+                   max(plants$height_mar12)),
+  rhiz_region = unique(plants$rhiz_region)
+)
+
+# predictions
+predictions_at_height <- predict(leaf_mod, newdata = height_values, 
+                                 se.fit = TRUE, type = "link")
+
+# Store predictions and intervals
+predictions_at_height_df <- data.frame(
+  height_mar12 = height_values$height_mar12,
+  rhiz_region = height_values$rhiz_region,
+  fit_response = exp(predictions_at_height$fit), 
+  lower_fit = 
+    exp(predictions_at_height$fit - 2 * predictions_at_height$se.fit),
+  upper_fit = 
+    exp(predictions_at_height$fit + 2 * predictions_at_height$se.fit),
+  lower_pred = 
+    exp(predictions_at_height$fit - 2 * predictions_at_height$se.fit * sqrt(1 + 1/nrow(plants))),
+  upper_pred = 
+    exp(predictions_at_height$fit + 2 * predictions_at_height$se.fit * sqrt(1 + 1/nrow(plants)))
+)
+
+ggplot(predictions_at_height_df, aes(x = height_mar12, color = rhiz_region)) +
+  # predictions
+  geom_ribbon(aes(ymin = lower_pred, ymax = upper_pred, fill = rhiz_region),
+              alpha = 0.2) +
+  # CI
+  geom_ribbon(aes(ymin = lower_fit, ymax = upper_fit, fill = rhiz_region),
+              alpha = 0.3) +
+  geom_line(aes(y = fit_response), size = 1) + 
+  labs(title = "Confidence Interval and Prediction Interval for Leaf Count",
+       subtitle = "Using a Poisson GLM with height and treatment",
+       x = "Height (March 12)",
+       y = "Leaf Count (March 12)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 8)) +
+  facet_wrap(~ rhiz_region, scales = "free_y")
+
+ggplot(predictions_at_height_df, aes(x = height_mar12, color = rhiz_region)) +
+  geom_line(aes(y = fit_response), size = 1) +  # Fit line
+  geom_line(aes(y = lower_fit), linetype = "solid", size = 0.8) + 
+  geom_line(aes(y = upper_fit), linetype = "solid", size = 0.8) + 
+  geom_line(aes(y = lower_pred), linetype = "dotted", size = 0.8) +  
+  geom_line(aes(y = upper_pred), linetype = "dotted", size = 0.8) +  
+  labs(title = "Fit, Confidence Interval and Prediction Interval for Leaf Count",
+       subtitle = "Solid lines = 95% CI, Dotted lines = 95% PI",
+       x = "Height (March 12)",
+       y = "Leaf Count (March 12)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 8)) +
+  facet_wrap(~ rhiz_region, scales = "free_y")
+
+
+```
+
+*I did the above plot two ways because the first way I thought that the way I was using geom_ribbon was masking the differences between the prediction and the confidence interval, so then I used the dotted vs. solid line, and then I could see that the prediction and confidence intervals are totally overlapping. Did I do something wrong here?*
+
+## **4. Mix it up!**
+
+### **4a. Load it up and plot**
+
+To get used to the data, plot survivorship as a function of tank size and predator treatment. Then, to challenge yourself a bit. Expand the data to 1s and 0s (lived or died), Now with the expanded data, plot it showing who lived, who died (who tells their story…), and how that corresponds to treatment AND tank. Do you see anything to do with within-tank variability?
+
+```{r 4a load data}
+reedfrogs <- read_delim("https://github.com/rmcelreath/rethinking/raw/master/data/reedfrogs.csv",
+                        delim = ";", show_col_types = F) %>%
+  mutate(tank = 1:n() %>% as.character(),
+         died = density - surv)
+
+summary(reedfrogs)
+reedfrogs$tank <- as.numeric(reedfrogs$tank)
+
+ggplot(reedfrogs, aes(x = tank, y = died, 
+                            color = pred, 
+                            group = pred)) +
+  geom_line(stat = "summary", fun = mean) + 
+  scale_y_continuous(breaks = seq(0, 35, by = 5), 
+                     limits = c(0, 35)) +
+  labs(
+    title = "Frog deaths by tank size and predators",
+    subtitle = "Looks like predators sure make a difference",
+    x = "Tank size",
+    y = "Deaths",
+    color = "Predator"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 7))
+
+reedfrogs_expanded <- reedfrogs %>%
+  group_by(tank, size, pred, density) %>%
+  reframe(status = c(rep(1, surv), rep(0, died))) %>%
+  ungroup()
+
+summary_data <- reedfrogs_expanded %>%
+  group_by(size, pred, status) %>%
+  summarise(count = n(), .groups = "drop")
+
+# Now, plot the data
+ggplot(summary_data, aes(x = as.factor(size), y = count, fill = factor(status))) +
+  geom_bar(stat = "identity", position = "stack", color = "black") +
+  labs(
+    title = "Survival Counts by Tank Size and Predator presence",
+    x = "Tank Size",
+    y = "Total population",
+    fill = "Status (1 = Lived, 0 = Died)"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("red", "green")) + 
+  facet_wrap(~ pred, ncol = 1)
+
+
+```
+
+*This was kind of weird to think of a way to plot this so I hope this makes sense... it does show the distribution of deaths across tank sizes for the group that has no predators and the group that does have predators. There is some variability between tanks, but seemingly random I would say.*
+
+### **4b. Are you *over* it?**
+
+Often, we treat data like this as a binomial logistic regression. We look at each tank as a set of ‘coin flips’ - some living some dead. Fit a glm here with survivorship determined by pred\*size, and then evaluate it for overdispersion. Careful to weight for number of individuals stocked in a tank (density)! What do you see when you look at overdispersion?
+
+```{r 4b model binomial data}
+
+frog_model <- glm(status ~ pred*size, 
+                  weights = density,
+                  family = binomial(link = "logit"), 
+                  data = reedfrogs_expanded)
+
+check_model(frog_model)
+# Below does not work, so annoying
+#plot(check_overdispersion(frog_model))
+# Manually checking overdispersion
+residual_deviance <- deviance(frog_model)
+df_residual <- df.residual(frog_model)
+overdispersion_ratio <- residual_deviance / df_residual
+overdispersion_ratio
+
+```
+
+*Zoinks! Huge overdispersion.*
+
+### **4c. Fixed or Random Intercept**
+
+One way to fix this problem is a quasi-binomial. But, this is unsatisfying, as it’s a posthoc adjustment and not figured into the likelihood. But, another is to think in this case about what is happening in each tank. Fit a mixed model version of 5b, and assess its assumptions. How does it compare in overdispersion? Why the difference? What is a random tank effect doing here? And why couldn’t we use a FE of tank with this pred\*size model (try it if you don’t believe me - the model will fit, but something will be… off)?
+
+```{r 4c mixed model}
+library(lme4)
+
+frog_model_mixed <- glmer(status ~ pred*size + (1 |tank), 
+                  weights = density,
+                  family = binomial(link = "logit"), 
+                  data = reedfrogs_expanded)
+
+residual_deviance <- deviance(frog_model_mixed)
+df_residual <- df.residual(frog_model_mixed)
+overdispersion_ratio <- residual_deviance / df_residual
+overdispersion_ratio
+
+check_model(frog_model_mixed)
+```
+
+*I feel like this is not really better?*
+
+### **4d. Changes in Parameters**
+
+Now that you have a model with and without a random intercept, how do the estimates of fixed effects change? Why?
+
+```{r 4d look at fixed effects}
+
+frog_model$coefficients
+fixef(frog_model_mixed)
+```
+
+*The coefficients will change because in the mixed model, we are allowing them to vary based on the value in "tank". Since there was some tank-level variability, the coefficients estimated by the mixed model are a little higher. The mixed model allows each tank to have its own intercept instead of assuming the effect of predator will be the exact same across tanks. So, the mixed model takes care of the "biased assumption" that tank size doesn't matter at all - instead, we say "hey tank size maybe matters, so let's incorportate that into the model", and therefore our coefficients are probably a bit more accurate.*
+
+### **4e. Model evaluation**
+
+Last, let’s evaluate this model - both with contrasts and a crisp visualization of results. `emmeans`, `modelbased`, and other friends might help you here. Or not! You do you, and extract things from the model with other helpers! There’s no one right way to do this, but, make it sing.
+
+```{r 4e evaluate}
+library(emmeans)
+
+# Get the comparisons
+emm <- emmeans(frog_model_mixed, ~ pred * size)
+pairwise_comparisons <- contrast(emm, method = "pairwise")
+
+library(gt)  # For pretty tables
+
+# Convert contrasts summary to a nicer table
+pairwise_comparisons %>%
+  summary() %>%
+  as.data.frame() %>%
+  gt() %>%
+  tab_header(
+    title = "Pairwise Comparisons of Predictions by Size",
+    subtitle = "Results from mixed-effects model"
+  )
+
+emm_df <- as.data.frame(emm)  # Extract emmeans to a df
+emm_df$prob <- plogis(emm_df$emmean) # make it on the right scale
+
+ggplot(emm_df, aes(x = size, y = prob, color = pred, group = pred)) +
+  geom_point(size = 3) +
+  geom_line() +
+  geom_errorbar(aes(ymin = plogis(emmean - SE * 2), 
+                    ymax = plogis(emmean + SE * 2)), width = 0.2) +
+  labs(title = "Estimated Probabilities with 95% CIs",
+       x = "Size",
+       y = "Predicted Probability of Surviving (1)") +
+  theme_minimal()
+
+
+
+
+```
+
+*The probability of surviving when predators are around increases when the tank is small (probably because there are less predators in general).*
+
+### **5. What did we do?**
+
+Write out the model equations for the glmm you have fit in 4.3. Use LaTeX to write it all out. Explain what your symbols mean in text.
+
+```{r 5}
+# Here is the model in R again:
+frog_model_mixed <- glmer(status ~ pred*size + (1 |tank), 
+                  weights = density,
+                  family = binomial(link = "logit"), 
+                  data = reedfrogs_expanded)
+```
+
+$\text{logit}(p) = \beta_0 + \beta_1 \cdot \text{pred} + \beta_2 \cdot \text{size} + \beta3 \cdot (\text{pred} \times \text{size}) + u{\text{tank}}$
+
+$\beta_0$ is the intercept term
+
+$\beta_1$​ is the coefficient for `pred` (the main effect of the predator).
+
+$\beta_2$​ is the coefficient for `size` (the main effect of the size).
+
+$\beta_3$ is the coefficient for the interaction between `pred` and `size`.
+
+$u$​ represents the random intercept for `tank`.
+
+$\text{logit}(p)$ means that we are getting the log-odds of the event (p)
+
+# **Midterm Self-Evaluation**
+
+### **A. How are you doing?**
+
+*I am hanging in there - I am keeping up just barely. There is an incredible amount of readings for this course and the homeworks take a long time.*
+
+### **B. What concepts do you think you’ve really mastered (or are on the journey to mastery - I know, you’re still learning) in this class?**
+
+*Writing the models is simple. Also one can easily plot a histogram of their data and see which family + link is best for a glm, so I have no issues with getting the model to do its thing.*
+
+### **C. What in this class do you find easy?**
+
+*Loading libraries and doing the most basic modeling.*
+
+### **D. How would you describe your personal journey with learning to code?**
+
+*Gotta do what you gotta do, and you learn on the way.*
+
+### **E. Where do you see applying coding in your life outside of just stats?**
+
+*Career of course. Research and stats are inseparable.*
+
+### **F. Where do you see the most opportunities for growth in your abilities?**
+
+*I know the qqplot and the basic of basic model assumption checks, but I get lost in the vocabulary terms and the different ways to flip over and turn around residuals and whatnot.*
+
+### **G. Talk about your work in this course. What have you done? What haven’t you done? How has this been helpful to your growth - or not?**
+
+*I have done all the homework and most of the readings. I don't do the suggested readings, and I have given up on doing the impress-yourselves. There is no time. And if any graduate students are finding time for those, I question their time management on their actual research projects hahaha.*
+
+### **H. Did you find yourself stretching your abilities in this exam? Or did it just feel like wrote comfortable work? Tell me about it.**
+
+*Yep as I am writing this now, there are at least 2 sections that I literally have no idea what is even being asked, so I will have to go back to those and try to parse out what is even going on. Its 3c and 3d.*
+
+### **I. How would you assess yourself from this exam - weak/sufficient/strong. Why?**
+
+*I always give myself a strong assessment because of the insane amount of time these things take! I am so far clocking in 6 hours for this midterm and I am not even done. There is no universe where I could possibly put any more attention or energy on this.*
+
+### **J. How would you assess yourself on the first half of this course - weak/sufficient/strong? Why?**
+
+*Strong. Just based on the time commitment. None of my other grad level courses have been so time consuming. But, I'm probably learning a lot, and I'm proud that I'm turning things in on time.*
+
+### **K. What goals do you have for yourself for the rest of the course? What do you hope to accomplish, and how will this move you forward?**
+
+H*mm. I hope to continue turning things in on time. I would like to be able to pay attention better in class. Sometimes I just lose the thread of attention and then 15 minutes go by and I have no idea whats going on. I would like to do well on the final project, if only for selfish reasons (have a better understanding of my own data, not really for the grade) but that is exactly why the course project is so well formulated.*
